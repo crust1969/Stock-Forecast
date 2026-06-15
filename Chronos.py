@@ -26,7 +26,7 @@ def load_model():
 model = load_model()
 
 # =========================
-# DATA LOADER (CLOUD SAFE)
+# DATA LOADER (SAFE)
 # =========================
 def load_data(ticker):
     df = yf.download(ticker, period=PERIOD, progress=False)
@@ -37,74 +37,84 @@ def load_data(ticker):
     df = df.reset_index()
     df.columns = [c.lower() for c in df.columns]
 
-    df = df.rename(columns={"date": "date", "close": "close"})
     df = df[["date", "close"]].dropna()
     df["close"] = df["close"].astype(np.float32)
 
     return df
 
 # =========================
-# CHRONOS FORECAST (SAFE)
+# CHRONOS FORECAST (100% SAFE)
 # =========================
 def chronos_forecast(series, horizon=HORIZON):
 
     series = np.asarray(series, dtype=np.float32)
-    series = series[~np.isnan(series)]
+    series = np.nan_to_num(series)
+
+    if len(series) < 60:
+        raise ValueError("Not enough data")
 
     inputs = torch.tensor(series).float().unsqueeze(0).unsqueeze(0)
 
     with torch.no_grad():
-        output = model.predict(
-            inputs,
-            horizon,
-            10
-        )
+        output = model.predict(inputs, horizon, 10)
 
-    # handle list or tensor
+    # handle list output
     if isinstance(output, list):
         output = torch.stack(output)
 
     output = output.cpu()
 
-    # expected: [samples, batch, horizon]
-    median = output.median(dim=0).values.squeeze(0).numpy()
+    # ensure tensor
+    output = torch.tensor(output)
 
-    return median
+    # median across samples
+    forecast = output.median(dim=0).values
+
+    # remove batch dimension
+    forecast = forecast.squeeze().numpy()
+
+    return forecast
 
 # =========================
 # BASELINES
 # =========================
 def naive(series):
-    return np.full(HORIZON, series[-1])
+    return np.full(HORIZON, series[-1], dtype=np.float32)
 
 def sma(series, window=20):
-    return np.full(HORIZON, np.mean(series[-window:]))
+    return np.full(HORIZON, np.mean(series[-window:]), dtype=np.float32)
 
 # =========================
-# UI
+# APP UI
 # =========================
 st.set_page_config(layout="wide")
-st.title("📊 Chronos-2 Professional Forecast Dashboard")
+st.title("📊 Chronos-2 Forecast Dashboard (Stable)")
 
 ticker = st.text_input("Ticker", "AMD")
 
 df = load_data(ticker)
 series = df["close"].values
 
-tab1, tab2 = st.tabs(["📈 Forecast", "🧪 Backtest"])
+tab1, tab2 = st.tabs(["📈 Forecast", "🧪 Debug"])
 
 # =========================
 # FORECAST TAB
 # =========================
 with tab1:
 
-    st.subheader("Forecast + History")
+    st.subheader("Forecast vs History")
 
     if st.button("Run Forecast"):
 
         forecast = chronos_forecast(series)
 
-        # FIX: proper timeline alignment
+        # 🔥 HARD FIX: make absolutely safe
+        forecast = np.asarray(forecast).reshape(-1)
+        forecast = np.nan_to_num(forecast)
+
+        # DEBUG (WICHTIG!)
+        st.write("Forecast preview:", forecast)
+
         future_dates = pd.date_range(
             start=df["date"].iloc[-1],
             periods=HORIZON + 1,
@@ -113,7 +123,7 @@ with tab1:
 
         fig = go.Figure()
 
-        # HISTORY
+        # History
         fig.add_trace(go.Scatter(
             x=df["date"],
             y=series,
@@ -121,15 +131,16 @@ with tab1:
             line=dict(color="blue")
         ))
 
-        # FORECAST
+        # Forecast (VISIBLE FIX 🔥)
         fig.add_trace(go.Scatter(
             x=future_dates,
             y=forecast,
             name="Chronos Forecast",
-            line=dict(color="orange", dash="dash")
+            line=dict(color="orange", width=4),
+            mode="lines+markers"
         ))
 
-        # SMA baseline
+        # SMA
         fig.add_trace(go.Scatter(
             x=future_dates,
             y=sma(series),
@@ -137,7 +148,7 @@ with tab1:
             line=dict(color="green", dash="dot")
         ))
 
-        # Naive baseline
+        # Naive
         fig.add_trace(go.Scatter(
             x=future_dates,
             y=naive(series),
@@ -146,34 +157,26 @@ with tab1:
         ))
 
         fig.update_layout(
-            title=f"{ticker} Forecast",
+            template="plotly_white",
+            title=f"{ticker} Forecast (Chronos-2)",
             xaxis_title="Date",
-            yaxis_title="Price",
-            template="plotly_white"
+            yaxis_title="Price"
         )
 
         st.plotly_chart(fig, use_container_width=True)
 
 # =========================
-# BACKTEST TAB
+# DEBUG TAB
 # =========================
 with tab2:
 
-    st.subheader("Simple Backtest (MAE)")
+    st.subheader("Debug Info")
 
-    if st.button("Run Backtest"):
+    st.write("Data shape:", series.shape)
+    st.write("Last values:", series[-5:])
 
-        errors = []
-
-        for i in range(120, len(series) - HORIZON, 20):
-
-            context = series[:i]
-            actual = series[i:i+HORIZON]
-
-            try:
-                pred = chronos_forecast(context)
-                errors.append(np.mean(np.abs(pred - actual)))
-            except:
-                continue
-
-        st.metric("MAE (Chronos)", round(np.mean(errors), 4))
+    try:
+        test = chronos_forecast(series)
+        st.write("Forecast OK:", test[:5])
+    except Exception as e:
+        st.error(str(e))
