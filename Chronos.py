@@ -72,17 +72,28 @@ def chronos_forecast(series: np.ndarray, horizon=20):
     if len(series) < 60:
         raise ValueError("Not enough data for Chronos")
 
-    # 🔥 FIX: correct shape (n_series=1, n_variates=1, time)
     inputs = torch.tensor(series).float().unsqueeze(0).unsqueeze(0)
 
     with torch.no_grad():
-        forecast = model.predict(
+        output = model.predict(
             inputs,
             horizon,
             10
         )
 
-    return forecast.median(dim=1).values.squeeze(0).cpu().numpy()
+    # =========================
+    # 🔥 FIX: handle list output
+    # =========================
+    if isinstance(output, list):
+        output = torch.stack(output)
+
+    # expected shape: [samples, batch, horizon]
+    if output.dim() == 3:
+        # take median over samples
+        return output.median(dim=0).values.squeeze(0).cpu().numpy()
+
+    # fallback if already tensor 2D
+    return output.median(dim=0).values.cpu().numpy()
 
 # =========================
 # BASELINES
