@@ -32,9 +32,27 @@ model = load_model()
 # =========================
 def load_data(ticker: str):
     df = yf.download(ticker, period=PERIOD)
+
+    # 🔥 FIX: MultiIndex flatten (Cloud-safe)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
     df = df.reset_index()
-    df = df.rename(columns={"Date": "date", "Close": "close"})
+
+    # 🔥 normalize column names
+    df.columns = [c.lower() for c in df.columns]
+
+    # yfinance standard: date column kann "date" oder "datetime" sein
+    if "date" not in df.columns:
+        if "datetime" in df.columns:
+            df = df.rename(columns={"datetime": "date"})
+
+    # Close fallback check
+    if "close" not in df.columns:
+        raise ValueError(f"No Close column found. Columns: {df.columns}")
+
     df = df[["date", "close"]].dropna()
+
     return df
 
 # =========================
