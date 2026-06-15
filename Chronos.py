@@ -72,12 +72,12 @@ def chronos_forecast(series: np.ndarray, horizon=20):
     if len(series) < 60:
         raise ValueError("Not enough data for Chronos")
 
-    # Chronos expects: (batch, time)
-    inputs = torch.tensor(series).float().unsqueeze(0)
+    # 🔥 FIX: correct shape (n_series=1, n_variates=1, time)
+    inputs = torch.tensor(series).float().unsqueeze(0).unsqueeze(0)
 
     with torch.no_grad():
         forecast = model.predict(
-            inputs,                 # 🔥 POSITIONAL ARGUMENT (WICHTIG!)
+            inputs,
             horizon,
             10
         )
