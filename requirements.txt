@@ -1,7 +1,7 @@
-streamlit
-pandas
-numpy
-plotly
-yfinance
-torch
+streamlit==1.37.0
+pandas==2.2.2
+numpy==1.26.4
+plotly==5.22.0
+yfinance==0.2.40
+torch==2.2.2
 chronos-forecasting

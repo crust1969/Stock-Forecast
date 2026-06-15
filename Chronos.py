@@ -30,55 +30,54 @@ model = load_model()
 # =========================
 # DATA LOADER (CLOUD SAFE)
 # =========================
-def load_data(ticker: str):
-    df = yf.download(ticker, period=PERIOD, progress=False)
+def chronos_forecast(series: np.ndarray, horizon=20):
 
-    # Flatten MultiIndex (Cloud issue fix)
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-
-    df = df.reset_index()
-
-    # normalize column names
-    df.columns = [c.lower() for c in df.columns]
-
-    # handle date column variations
-    if "date" not in df.columns:
-        if "datetime" in df.columns:
-            df = df.rename(columns={"datetime": "date"})
-        elif "index" in df.columns:
-            df = df.rename(columns={"index": "date"})
-
-    # safety check
-    if "close" not in df.columns:
-        raise ValueError(f"No 'close' column. Got: {df.columns}")
-
-    df = df[["date", "close"]].dropna()
-    df["close"] = df["close"].astype(np.float32)
-
-    return df
-
-# =========================
-# SAFE CHRONOS FORECAST
-# =========================
-def chronos_forecast(series: np.ndarray, horizon=HORIZON):
+    import torch
+    import numpy as np
 
     series = np.asarray(series, dtype=np.float32)
     series = series[~np.isnan(series)]
 
     if len(series) < 50:
-        raise ValueError("Not enough data for Chronos")
+        raise ValueError("Not enough data")
 
-    context = torch.tensor(series).float().flatten()
+    inputs = torch.tensor(series).float().unsqueeze(0)  # 🔥 wichtig: batch dim
 
     with torch.no_grad():
         forecast = model.predict(
-            context=context,
+            inputs=inputs,
             prediction_length=horizon,
             num_samples=10
         )
 
-    return forecast.median(dim=0).values.cpu().numpy()
+    return forecast.median(dim=1).values.squeeze(0).cpu().numpy()
+
+# =========================
+# SAFE CHRONOS FORECAST
+# =========================
+def chronos_forecast(series: np.ndarray, horizon=20):
+
+    import torch
+    import numpy as np
+
+    series = np.asarray(series, dtype=np.float32)
+    series = series[~np.isnan(series)]
+
+    if len(series) < 60:
+        raise ValueError("Not enough data for Chronos")
+
+    # 🔥 Chronos expects batch dimension
+    inputs = torch.tensor(series).float().unsqueeze(0)
+
+    with torch.no_grad():
+        forecast = model.predict(
+            inputs=inputs,
+            prediction_length=horizon,
+            num_samples=10
+        )
+
+    # 🔥 correct output handling
+    return forecast.median(dim=1).values.squeeze(0).cpu().numpy()
 
 # =========================
 # BASELINES
