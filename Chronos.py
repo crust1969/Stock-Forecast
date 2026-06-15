@@ -61,24 +61,28 @@ def load_data(ticker: str):
 # =========================
 # SAFE CHRONOS FORECAST
 # =========================
-def chronos_forecast(series: np.ndarray, horizon=HORIZON):
+def chronos_forecast(series: np.ndarray, horizon=20):
+
+    import torch
+    import numpy as np
 
     series = np.asarray(series, dtype=np.float32)
     series = series[~np.isnan(series)]
 
-    if len(series) < 50:
+    if len(series) < 60:
         raise ValueError("Not enough data for Chronos")
 
-    context = torch.tensor(series).float().flatten()
+    # Chronos expects: (batch, time)
+    inputs = torch.tensor(series).float().unsqueeze(0)
 
     with torch.no_grad():
         forecast = model.predict(
-            context=context,
-            prediction_length=horizon,
-            num_samples=10
+            inputs,                 # 🔥 POSITIONAL ARGUMENT (WICHTIG!)
+            horizon,
+            10
         )
 
-    return forecast.median(dim=0).values.cpu().numpy()
+    return forecast.median(dim=1).values.squeeze(0).cpu().numpy()
 
 # =========================
 # BASELINES
